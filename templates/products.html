@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ürün Bilgileri</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <h1 class="mt-5">Ürün Bilgileri</h1>
+        <form method="POST" action="/products">
+            <button type="submit" class="btn btn-primary mb-3">Ürünleri Getir</button>
+        </form>
+        {% if products %}
+        <table class="table table-bordered">
+            <thead>
+                <tr>
+                    <th>Barcode</th>
+                    <th>Product URL</th>
+                    <th>Product IDs</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for product in products %}
+                <tr>
+                    <td>{{ product.barcode }}</td>
+                    <td><a href="{{ product.product_url }}" target="_blank">{{ product.product_url }}</a></td>
+                    <td>
+                        {% for product_id in product.product_ids %}
+                        {{ product_id }}<br>
+                        {% endfor %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+        <a href="/" class="btn btn-secondary mt-3">Geri Dön</a>
+    </div>
+</body>
+</html>
