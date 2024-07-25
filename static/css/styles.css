@@ -11,12 +11,10 @@ body {
 
 /* Ortak Konteyner Stili */
 .container {
-    margin-top: 50px;
     background-color: #ffffff;
     padding: 30px;
     border-radius: 15px;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    transform: translateY(0);
     transition: all 0.5s ease;
 }
 

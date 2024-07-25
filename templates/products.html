@@ -8,6 +8,29 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body>
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">Trendyol Ürün Yönetimi</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/products">Ürünler</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/logs">Logs</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/logout">Çıkış Yap</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
     <div class="container mt-5">
         <h1 class="mb-4 text-center">Ürün Bilgileri</h1>
 
@@ -19,8 +42,22 @@
             </div>
         </form>
 
+        <!-- Excel Dosya Yükleme -->
+        <form method="POST" action="/products" enctype="multipart/form-data" class="mb-3">
+            <div class="input-group">
+                <input type="file" class="form-control" name="file">
+                <button class="btn btn-outline-secondary" type="submit">Customer IDs Yükle</button>
+            </div>
+        </form>
+
+        <!-- Ürünleri Getir Butonu -->
         <form method="POST" action="/products" class="mb-3 text-center">
             <button type="submit" class="btn btn-primary">Ürünleri Getir</button>
+        </form>
+
+        <!-- Durdur Butonu -->
+        <form method="POST" action="/stop_fetching" class="mb-3 text-center">
+            <button type="submit" class="btn btn-danger">Durdur</button>
         </form>
 
         {% if products %}
