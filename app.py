@@ -74,8 +74,9 @@ def products():
         return redirect(url_for('index'))
 
     query = request.args.get('query', '')
-    page = 1
-    all_products = []
+    page = request.args.get('page', 1, type=int)
+    per_page = 50
+    offset = (page - 1) * per_page
 
     if request.method == 'POST':
         if 'file' in request.files:
@@ -86,8 +87,10 @@ def products():
                 load_customer_ids_from_excel(file_path)
                 return redirect(url_for('products'))
 
+        all_products = []
+        page_num = 1
         while True:
-            response = fetch_products_page(token, page)
+            response = fetch_products_page(token, page_num)
             if response.get('error'):
                 return response['error']
             data = response['data']
@@ -124,18 +127,29 @@ def products():
                         cur.execute("INSERT INTO products (barcode, product_url, product_ids) VALUES (?, ?, ?)",
                                     (product_info['barcode'], product_info['product_url'], product_info['product_ids']))
                         con.commit()
-            page += 1
+            page_num += 1
 
     with sqlite3.connect('database.db') as con:
         cur = con.cursor()
         if query:
-            cur.execute("SELECT * FROM products WHERE barcode LIKE ?",
-                        ('%' + query + '%',))
+            cur.execute("SELECT * FROM products WHERE barcode LIKE ? LIMIT ? OFFSET ?",
+                        ('%' + query + '%', per_page, offset))
         else:
-            cur.execute("SELECT * FROM products")
+            cur.execute("SELECT * FROM products LIMIT ? OFFSET ?", (per_page, offset))
         products_info = cur.fetchall()
 
-    return render_template('products.html', products=products_info, query=query)
+        if query:
+            cur.execute("SELECT COUNT(*) FROM products WHERE barcode LIKE ?", ('%' + query + '%',))
+        else:
+            cur.execute("SELECT COUNT(*) FROM products")
+        total_products = cur.fetchone()[0]
+
+    total_pages = (total_products + per_page - 1) // per_page
+    prev_page = page - 1 if page > 1 else None
+    next_page = page + 1 if page < total_pages else None
+
+    return render_template('products.html', products=products_info, query=query, prev_page=prev_page,
+                           next_page=next_page, total_pages=total_pages, page=page)
 
 
 

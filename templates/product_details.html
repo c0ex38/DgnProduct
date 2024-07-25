@@ -9,9 +9,9 @@
 </head>
 <body>
     <!-- Navbar -->
-    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <nav class="navbar navbar-expand-lg navbar-light bg-light shadow-sm">
         <div class="container-fluid">
-            <a class="navbar-brand" href="/">Trendyol Ürün Yönetimi</a>
+            <a class="navbar-brand" href="/products">Trendyol Ürün Yönetimi</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
@@ -29,68 +29,70 @@
     </nav>
 
     <div class="container mt-5">
-        <h1 class="mb-4 text-center">Ürün Detayları</h1>
+        <div class="card p-4 shadow-lg">
+            <h1 class="mb-4 text-center">Ürün Detayları</h1>
 
-        <table class="table table-bordered">
-            <tbody>
-                <tr>
-                    <th scope="row">Barcode</th>
-                    <td>{{ barcode }}</td>
-                </tr>
-                <tr>
-                    <th scope="row">Product URL</th>
-                    <td><a href="{{ url }}" target="_blank">{{ url }}</a></td>
-                </tr>
-                <tr>
-                    <th scope="row">Product IDs</th>
-                    <td>{{ ids }}</td>
-                </tr>
-            </tbody>
-        </table>
-        <form method="GET" action="{{ url_for('product_details') }}">
-            <input type="hidden" name="barcode" value="{{ barcode }}">
-            <input type="hidden" name="url" value="{{ url }}">
-            <input type="hidden" name="ids" value="{{ ids }}">
-            <button type="submit" class="btn btn-primary mb-3">Yorumları Getir</button>
-        </form>
-        {% if urun_yorumlari %}
-        <form method="POST" action="{{ url_for('submit_comments') }}">
-            <input type="hidden" name="barcode" value="{{ barcode }}">
-            <input type="hidden" name="url" value="{{ url }}">
-            <input type="hidden" name="ids" value="{{ ids }}">
             <table class="table table-bordered">
-                <thead>
-                    <tr>
-                        <th scope="col">Yorum Metni</th>
-                        <th scope="col">Yorum Başlığı</th>
-                        <th scope="col">Yorum Puanı</th>
-                        <th scope="col">Gönder</th>
-                    </tr>
-                </thead>
                 <tbody>
-                    {% for yorum in urun_yorumlari %}
                     <tr>
-                        <td>
-                            <input type="text" name="yorum_metni" value="{{ yorum.yorum }}" class="form-control">
-                        </td>
-                        <td>
-                            <input type="text" name="yorum_basligi" class="form-control">
-                        </td>
-                        <td>
-                            <input type="number" name="yorum_puani" value="{{ yorum.yildiz }}" class="form-control">
-                        </td>
-                        <td>
-                            <button type="submit" name="yorum_index" value="{{ loop.index0 }}" class="btn btn-success">Gönder</button>
-                        </td>
+                        <th scope="row">Barcode</th>
+                        <td>{{ barcode }}</td>
                     </tr>
-                    {% endfor %}
+                    <tr>
+                        <th scope="row">Product URL</th>
+                        <td><a href="{{ url }}" target="_blank">{{ url }}</a></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Product IDs</th>
+                        <td>{{ ids }}</td>
+                    </tr>
                 </tbody>
             </table>
-        </form>
-        {% else %}
-        <p class="alert alert-warning">Yorum bulunamadı.</p>
-        {% endif %}
-        <a href="/products" class="btn btn-secondary mt-3">Geri Dön</a>
+            <form method="GET" action="{{ url_for('product_details') }}">
+                <input type="hidden" name="barcode" value="{{ barcode }}">
+                <input type="hidden" name="url" value="{{ url }}">
+                <input type="hidden" name="ids" value="{{ ids }}">
+                <button type="submit" class="btn btn-primary mb-3">Yorumları Getir</button>
+            </form>
+            {% if urun_yorumlari %}
+            <form method="POST" action="{{ url_for('submit_comments') }}">
+                <input type="hidden" name="barcode" value="{{ barcode }}">
+                <input type="hidden" name="url" value="{{ url }}">
+                <input type="hidden" name="ids" value="{{ ids }}">
+                <table class="table table-bordered">
+                    <thead>
+                        <tr>
+                            <th scope="col">Yorum Metni</th>
+                            <th scope="col">Yorum Başlığı</th>
+                            <th scope="col">Yorum Puanı</th>
+                            <th scope="col">Gönder</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for yorum in urun_yorumlari %}
+                        <tr>
+                            <td>
+                                <input type="text" name="yorum_metni" value="{{ yorum.yorum }}" class="form-control">
+                            </td>
+                            <td>
+                                <input type="text" name="yorum_basligi" class="form-control">
+                            </td>
+                            <td>
+                                <input type="number" name="yorum_puani" value="{{ yorum.yildiz }}" class="form-control">
+                            </td>
+                            <td>
+                                <button type="submit" name="yorum_index" value="{{ loop.index0 }}" class="btn btn-success">Gönder</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </form>
+            {% else %}
+            <p class="alert alert-warning">Yorum bulunamadı.</p>
+            {% endif %}
+            <a href="/products" class="btn btn-secondary mt-3">Geri Dön</a>
+        </div>
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
 </body>
