@@ -4,39 +4,119 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ürün Bilgileri</title>
-    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/styles.css') }}" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body>
-    <div class="container">
-        <h1 class="mt-5">Ürün Bilgileri</h1>
-        <form method="POST" action="/products">
-            <button type="submit" class="btn btn-primary mb-3">Ürünleri Getir</button>
+    <div class="container mt-5">
+        <h1 class="mb-4 text-center">Ürün Bilgileri</h1>
+
+        <!-- Arama Formu -->
+        <form method="GET" action="/products" class="mb-3">
+            <div class="input-group">
+                <input type="text" class="form-control" placeholder="Barcode ile ara..." name="query" value="{{ query }}">
+                <button class="btn btn-outline-secondary" type="submit">Ara</button>
+            </div>
         </form>
+
+        <form method="POST" action="/products" class="mb-3 text-center">
+            <button type="submit" class="btn btn-primary">Ürünleri Getir</button>
+        </form>
+
         {% if products %}
-        <table class="table table-bordered">
-            <thead>
-                <tr>
-                    <th>Barcode</th>
-                    <th>Product URL</th>
-                    <th>Product IDs</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for product in products %}
-                <tr>
-                    <td>{{ product.barcode }}</td>
-                    <td><a href="{{ product.product_url }}" target="_blank">{{ product.product_url }}</a></td>
-                    <td>
-                        {% for product_id in product.product_ids %}
-                        {{ product_id }}<br>
-                        {% endfor %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover table-products">
+                <thead class="thead-dark">
+                    <tr>
+                        <th scope="col">Barcode</th>
+                        <th scope="col">Product URL</th>
+                        <th scope="col">Product IDs</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for product in products %}
+                    <tr>
+                        <td><a href="#" class="barcode-link" data-bs-toggle="modal" data-bs-target="#productModal" data-barcode="{{ product[1] }}">{{ product[1] }}</a></td>
+                        <td><a href="{{ product[2] }}" target="_blank">{{ product[2] }}</a></td>
+                        <td>{{ product[3] }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <nav>
+            <ul class="pagination justify-content-center">
+                {% if prev_page %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ url_for('products', page=prev_page, query=query) }}">Önceki</a>
+                </li>
+                {% endif %}
+                {% if next_page %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ url_for('products', page=next_page, query=query) }}">Sonraki</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
         {% endif %}
         <a href="/" class="btn btn-secondary mt-3">Geri Dön</a>
     </div>
+
+    <!-- Modal -->
+    <div class="modal fade" id="productModal" tabindex="-1" aria-labelledby="productModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="productModalLabel">Ürün Detayları</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <table class="table table-borderless">
+                        <tbody>
+                            <tr>
+                                <th scope="row">Barcode</th>
+                                <td id="modal-barcode"></td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Product URL</th>
+                                <td><a href="#" target="_blank" id="modal-url"></a></td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Product IDs</th>
+                                <td id="modal-ids"></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Kapat</button>
+                    <a id="details-button" href="#" class="btn btn-primary">Yorumlar</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const productModal = document.getElementById('productModal');
+        productModal.addEventListener('show.bs.modal', event => {
+            const button = event.relatedTarget;
+            const barcode = button.getAttribute('data-barcode');
+
+            fetch(`/products/${barcode}`)
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('modal-barcode').innerText = data.barcode;
+                    const urlElement = document.getElementById('modal-url');
+                    urlElement.innerText = data.product_url;
+                    urlElement.href = data.product_url;
+                    document.getElementById('modal-ids').innerText = data.product_ids;
+
+                    // Detaylar butonunun href değerini ayarla
+                    const detailsButton = document.getElementById('details-button');
+                    detailsButton.href = `/product_details?barcode=${data.barcode}&url=${encodeURIComponent(data.product_url)}&ids=${encodeURIComponent(data.product_ids)}`;
+                });
+        });
+    </script>
 </body>
 </html>
