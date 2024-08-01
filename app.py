@@ -1,3 +1,9 @@
+"""
+Bu Flask uygulaması, Trendyol API'si ile etkileşime girerek ürün bilgilerini ve yorumlarını çeker.
+Kullanıcılar giriş yaparak ürünleri arayabilir, yorum ekleyebilir ve ürün detaylarını görüntüleyebilir.
+Ayrıca müşteri kimlik bilgilerini bir Excel dosyasından yükleyebilirler.
+"""
+
 import json
 import sqlite3
 import pandas as pd
@@ -30,20 +36,17 @@ headers = {
 def init_db():
     with sqlite3.connect('database.db') as con:
         cur = con.cursor()
-        cur.execute('''CREATE TABLE IF NOT EXISTS products
+        cur.execute('''CREATE TABLE IF NOT EXISTS products_with_comments
+                       (id INTEGER PRIMARY KEY, barcode TEXT UNIQUE, product_url TEXT, product_ids TEXT)''')
+        cur.execute('''CREATE TABLE IF NOT EXISTS products_without_comments
                        (id INTEGER PRIMARY KEY, barcode TEXT UNIQUE, product_url TEXT, product_ids TEXT)''')
         cur.execute('''CREATE TABLE IF NOT EXISTS CustomerId
                        (id INTEGER PRIMARY KEY, customer_id TEXT)''')
-        cur.execute('''CREATE TABLE IF NOT EXISTS logs
-                       (id INTEGER PRIMARY KEY, timestamp TEXT, action TEXT, details TEXT)''')
+        cur.execute('''CREATE TABLE IF NOT EXISTS comments
+                       (id INTEGER PRIMARY KEY, urun_id TEXT, yildiz INTEGER, yorum TEXT UNIQUE)''')
         con.commit()
 
 
-def log_action(action, details):
-    with sqlite3.connect('database.db') as con:
-        cur = con.cursor()
-        cur.execute("INSERT INTO logs (timestamp, action, details) VALUES (datetime('now'), ?, ?)", (action, details))
-        con.commit()
 
 
 # Excel'den CustomerId tablosuna veri yükleme
@@ -87,7 +90,6 @@ def products():
                 load_customer_ids_from_excel(file_path)
                 return redirect(url_for('products'))
 
-        all_products = []
         page_num = 1
         while True:
             response = fetch_products_page(token, page_num)
@@ -101,68 +103,91 @@ def products():
                 barcode = product['barcode']
                 product_url = product['productUrl']
                 product_ids = get_product_ids_by_barcode(token, barcode)
-                all_products.append({
-                    'barcode': barcode,
-                    'product_url': product_url,
-                    'product_ids': ','.join(product_ids) if product_ids else None
-                })
 
-                product_info = {
-                    'barcode': barcode,
-                    'product_url': product_url,
-                    'product_ids': ','.join(product_ids) if product_ids else None
-                }
-                with sqlite3.connect('database.db') as con:
-                    cur = con.cursor()
-                    cur.execute("SELECT * FROM products WHERE barcode = ?", (barcode,))
-                    existing_product = cur.fetchone()
+                # Urun yorumlarını kontrol et
+                trendyol_urun = Urun()
+                urun_yorumlari = trendyol_urun.yorumlar(product_url)
+                table_name = 'products_with_comments' if urun_yorumlari else 'products_without_comments'
 
-                    if existing_product:
-                        if (existing_product[2] != product_info['product_url'] or
-                                existing_product[3] != product_info['product_ids']):
-                            cur.execute("UPDATE products SET product_url = ?, product_ids = ? WHERE barcode = ?",
-                                        (product_info['product_url'], product_info['product_ids'], barcode))
+                # product_ids'in boş olmadığını kontrol et
+                if product_ids:
+                    product_info = {
+                        'barcode': barcode,
+                        'product_url': product_url,
+                        'product_ids': ','.join(product_ids) if product_ids else None
+                    }
+                    with sqlite3.connect('database.db') as con:
+                        cur = con.cursor()
+                        cur.execute(f"SELECT * FROM {table_name} WHERE barcode = ?", (barcode,))
+                        existing_product = cur.fetchone()
+
+                        if existing_product:
+                            if (existing_product[2] != product_info['product_url'] or
+                                    existing_product[3] != product_info['product_ids']):
+                                cur.execute(
+                                    f"UPDATE {table_name} SET product_url = ?, product_ids = ? WHERE barcode = ?",
+                                    (product_info['product_url'], product_info['product_ids'], barcode))
+                                con.commit()
+                        else:
+                            cur.execute(
+                                f"INSERT INTO {table_name} (barcode, product_url, product_ids) VALUES (?, ?, ?)",
+                                (product_info['barcode'], product_info['product_url'], product_info['product_ids']))
                             con.commit()
-                    else:
-                        cur.execute("INSERT INTO products (barcode, product_url, product_ids) VALUES (?, ?, ?)",
-                                    (product_info['barcode'], product_info['product_url'], product_info['product_ids']))
-                        con.commit()
+
             page_num += 1
 
     with sqlite3.connect('database.db') as con:
         cur = con.cursor()
         if query:
-            cur.execute("SELECT * FROM products WHERE barcode LIKE ? LIMIT ? OFFSET ?",
+            cur.execute("SELECT * FROM products_with_comments WHERE barcode LIKE ? LIMIT ? OFFSET ?",
                         ('%' + query + '%', per_page, offset))
         else:
-            cur.execute("SELECT * FROM products LIMIT ? OFFSET ?", (per_page, offset))
-        products_info = cur.fetchall()
+            cur.execute("SELECT * FROM products_with_comments LIMIT ? OFFSET ?", (per_page, offset))
+        products_with_comments = cur.fetchall()
 
         if query:
-            cur.execute("SELECT COUNT(*) FROM products WHERE barcode LIKE ?", ('%' + query + '%',))
+            cur.execute("SELECT * FROM products_without_comments WHERE barcode LIKE ? LIMIT ? OFFSET ?",
+                        ('%' + query + '%', per_page, offset))
         else:
-            cur.execute("SELECT COUNT(*) FROM products")
-        total_products = cur.fetchone()[0]
+            cur.execute("SELECT * FROM products_without_comments LIMIT ? OFFSET ?", (per_page, offset))
+        products_without_comments = cur.fetchall()
 
-    total_pages = (total_products + per_page - 1) // per_page
+        if query:
+            cur.execute("SELECT COUNT(*) FROM products_with_comments WHERE barcode LIKE ?", ('%' + query + '%',))
+        else:
+            cur.execute("SELECT COUNT(*) FROM products_with_comments")
+        total_products_with_comments = cur.fetchone()[0]
+
+        if query:
+            cur.execute("SELECT COUNT(*) FROM products_without_comments WHERE barcode LIKE ?", ('%' + query + '%',))
+        else:
+            cur.execute("SELECT COUNT(*) FROM products_without_comments")
+        total_products_without_comments = cur.fetchone()[0]
+
+    total_products_with_comments_pages = (total_products_with_comments + per_page - 1) // per_page
+    total_products_without_comments_pages = (total_products_without_comments + per_page - 1) // per_page
     prev_page = page - 1 if page > 1 else None
-    next_page = page + 1 if page < total_pages else None
+    next_page = page + 1 if page < total_products_with_comments_pages else None
 
-    return render_template('products.html', products=products_info, query=query, prev_page=prev_page,
-                           next_page=next_page, total_pages=total_pages, page=page)
-
+    return render_template('products.html',
+                           products_with_comments=products_with_comments,
+                           products_without_comments=products_without_comments,
+                           query=query,
+                           prev_page=prev_page,
+                           next_page=next_page,
+                           total_pages=total_products_with_comments_pages,
+                           total_without_comments_pages=total_products_without_comments_pages,
+                           page=page)
 
 
 @app.route('/stop_fetching', methods=['POST'])
 def stop_fetching():
     session['stop_fetching'] = True
-    log_action("Stop Fetching", "Veri getirme işlemi durduruldu.")
     return redirect(url_for('products'))
 
 
-def fetch_products_page(token, page, size=50, approved='True', on_sale='true'):
+def fetch_products_page(token, page, size=200, approved='True', on_sale='true'):
     if session.get('stop_fetching'):
-        log_action("Fetching Stopped", f"Veri getirme işlemi sayfa {page} da durduruldu.")
         return {'error': 'Fetching stopped by user.'}
 
     params = {
@@ -184,8 +209,12 @@ def fetch_products_page(token, page, size=50, approved='True', on_sale='true'):
 def product_detail(barcode):
     with sqlite3.connect('database.db') as con:
         cur = con.cursor()
-        cur.execute("SELECT * FROM products WHERE barcode = ?", (barcode,))
+        cur.execute("SELECT * FROM products_with_comments WHERE barcode = ?", (barcode,))
         product = cur.fetchone()
+
+        if not product:
+            cur.execute("SELECT * FROM products_without_comments WHERE barcode = ?", (barcode,))
+            product = cur.fetchone()
 
     if product:
         return {
@@ -195,6 +224,7 @@ def product_detail(barcode):
         }
     else:
         return {"error": "Product not found"}, 404
+
 
 
 @app.route('/product_details', methods=['GET', 'POST'])
@@ -231,15 +261,6 @@ def submit_comments():
 
     return redirect(
         url_for('product_details', barcode=request.form.get('barcode'), url=request.form.get('url'), ids=product_ids))
-
-
-@app.route('/logs')
-def view_logs():
-    with sqlite3.connect('database.db') as con:
-        cur = con.cursor()
-        cur.execute("SELECT * FROM logs ORDER BY timestamp DESC")
-        logs = cur.fetchall()
-    return render_template('logs.html', logs=logs)
 
 
 @app.route('/logout')
@@ -311,7 +332,7 @@ class Urun:
         """Trendyol'dan hedef ürün detaylarını çevirir"""
         self.__kimlik = {"User-Agent": "pyTrendyol"}
 
-    def yorumlar(self, urun_link: str, hedef_satici: str = None) -> list[dict] or None:
+    def yorumlar(self, urun_link: str, hedef_satici: str = "DGN") -> list[dict] or None:
         """Trendyol'dan hedef ürün yorumlarını çevirir, sadece yıldız ve yorumları içerir"""
         if not urun_link:
             print("Ürün linki boş veya geçersiz.")
@@ -339,7 +360,10 @@ class Urun:
                     "yildiz": yorum["rate"],
                     "yorum": yorum["comment"]
                 }
-                for yorum in veriler["content"] if yorum and (not hedef_satici or yorum["sellerName"] == hedef_satici)
+                for yorum in veriler["content"]
+                if yorum and
+                   (yorum["sellerName"] == hedef_satici if hedef_satici else True) and
+                   yorum["rate"] >= 3
             )
 
             sayfa += 1
@@ -442,6 +466,7 @@ def get_product_ids_by_barcode(token, barcode_code):
 
                     # ProductCode'in son kısmını kesmek
                     base_product_code = product_code.rsplit('-', 1)[0]  # Ürün kodunu son kısımdan kes
+                    print(base_product_code)
 
                     # İkinci API çağrısı: ProductCode ile ProductId almak
                     productcode_url = "https://dgnonline.com/rest1/product/get"  # Ürün kodu URL'si
@@ -453,6 +478,8 @@ def get_product_ids_by_barcode(token, barcode_code):
 
                     productcode_response = requests.post(productcode_url,
                                                          data=productcode_params)  # POST isteği ile ürün ID'si al
+                    print(productcode_response)
+
                     if productcode_response.status_code == 200:  # Eğer ürün ID'si alma başarılıysa
                         try:
                             productcode_response_json = productcode_response.json()  # JSON yanıtı parse et
@@ -460,7 +487,9 @@ def get_product_ids_by_barcode(token, barcode_code):
                                 for product in productcode_response_json["data"]:
                                     product_id = product["ProductId"]  # Ürün ID'sini al
                                     product_ids.append(product_id)  # Ürün ID'sini listeye ekle
+                                    print(product_id)
                                     print(product_ids)
+                                    print(productcode_response_json)
                             else:
                                 print("ProductId yanıtı JSON formatında değil veya boş.")  # Hata mesajı yazdır
                         except json.JSONDecodeError:

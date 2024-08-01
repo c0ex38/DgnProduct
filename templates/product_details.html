@@ -63,7 +63,6 @@
                     <thead>
                         <tr>
                             <th scope="col">Yorum Metni</th>
-                            <th scope="col">Yorum Başlığı</th>
                             <th scope="col">Yorum Puanı</th>
                             <th scope="col">Gönder</th>
                         </tr>
@@ -73,9 +72,6 @@
                         <tr>
                             <td>
                                 <input type="text" name="yorum_metni" value="{{ yorum.yorum }}" class="form-control">
-                            </td>
-                            <td>
-                                <input type="text" name="yorum_basligi" class="form-control">
                             </td>
                             <td>
                                 <input type="number" name="yorum_puani" value="{{ yorum.yildiz }}" class="form-control">

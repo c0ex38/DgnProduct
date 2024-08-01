@@ -21,9 +21,6 @@
                         <a class="nav-link" href="/products">Ürünler</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/logs">Logs</a>
-                    </li>
-                    <li class="nav-item">
                         <a class="nav-link" href="/logout">Çıkış Yap</a>
                     </li>
                 </ul>
@@ -60,27 +57,71 @@
             <button type="submit" class="btn btn-danger">Durdur</button>
         </form>
 
-        {% if products %}
-        <div class="table-responsive">
-            <table class="table table-bordered table-hover table-products">
-                <thead class="thead-dark">
-                    <tr>
-                        <th scope="col">Barcode</th>
-                        <th scope="col">Product URL</th>
-                        <th scope="col">Product IDs</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for product in products %}
-                    <tr>
-                        <td><a href="#" class="barcode-link" data-bs-toggle="modal" data-bs-target="#productModal" data-barcode="{{ product[1] }}">{{ product[1] }}</a></td>
-                        <td><a href="{{ product[2] }}" target="_blank">{{ product[2] }}</a></td>
-                        <td>{{ product[3] }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <!-- Sekme Başlangıcı -->
+        <ul class="nav nav-tabs" id="productTab" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="comments-tab" data-bs-toggle="tab" data-bs-target="#comments" type="button" role="tab" aria-controls="comments" aria-selected="true">Yorumlu Ürünler</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="no-comments-tab" data-bs-toggle="tab" data-bs-target="#no-comments" type="button" role="tab" aria-controls="no-comments" aria-selected="false">Yorumsuz Ürünler</button>
+            </li>
+        </ul>
+        <div class="tab-content" id="productTabContent">
+            <div class="tab-pane fade show active" id="comments" role="tabpanel" aria-labelledby="comments-tab">
+                <!-- Yorumlu Ürünler Tablosu -->
+                <h2 class="mb-4 text-center">Yorumlu Ürünler</h2>
+                {% if products_with_comments %}
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover table-products">
+                        <thead class="thead-dark">
+                            <tr>
+                                <th scope="col">Barcode</th>
+                                <th scope="col">Product URL</th>
+                                <th scope="col">Product IDs</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for product in products_with_comments %}
+                            <tr>
+                                <td><a href="#" class="barcode-link" data-bs-toggle="modal" data-bs-target="#productModal" data-barcode="{{ product[1] }}">{{ product[1] }}</a></td>
+                                <td><a href="{{ product[2] }}" target="_blank">{{ product[2] }}</a></td>
+                                <td>{{ product[3] }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+            </div>
+            <div class="tab-pane fade" id="no-comments" role="tabpanel" aria-labelledby="no-comments-tab">
+                <!-- Yorumsuz Ürünler Tablosu -->
+                <h2 class="mb-4 text-center">Yorumsuz Ürünler</h2>
+                {% if products_without_comments %}
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover table-products">
+                        <thead class="thead-dark">
+                            <tr>
+                                <th scope="col">Barcode</th>
+                                <th scope="col">Product URL</th>
+                                <th scope="col">Product IDs</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for product in products_without_comments %}
+                            <tr>
+                                <td><a href="#" class="barcode-link" data-bs-toggle="modal" data-bs-target="#productModal" data-barcode="{{ product[1] }}">{{ product[1] }}</a></td>
+                                <td><a href="{{ product[2] }}" target="_blank">{{ product[2] }}</a></td>
+                                <td>{{ product[3] }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+            </div>
         </div>
+        <!-- Sekme Bitişi -->
+
         <nav>
             <ul class="pagination justify-content-center">
                 {% if prev_page %}
@@ -95,7 +136,7 @@
                 {% endif %}
             </ul>
         </nav>
-        {% endif %}
+
         <a href="/" class="btn btn-secondary mt-3">Geri Dön</a>
     </div>
 
