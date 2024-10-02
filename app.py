@@ -13,6 +13,10 @@ from requests import get
 from requests.exceptions import ConnectionError
 from urllib.parse import unquote
 from re import search
+import time
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+import atexit
 
 app = Flask(__name__)
 app.secret_key = 'supersecretkey'  # Oturum için gizli anahtar
@@ -45,8 +49,6 @@ def init_db():
         cur.execute('''CREATE TABLE IF NOT EXISTS comments
                        (id INTEGER PRIMARY KEY, urun_id TEXT, yildiz INTEGER, yorum TEXT UNIQUE)''')
         con.commit()
-
-
 
 
 # Excel'den CustomerId tablosuna veri yükleme
@@ -92,77 +94,24 @@ def products():
 
         page_num = 1
         while True:
-            response = fetch_products_page(token, page_num)
+            response = fetch_products_page(token, page_num)  # Doğru parametrelerle çağırıyoruz
             if response.get('error'):
                 return response['error']
             data = response['data']
             if not data:
                 break
 
-            for product in data:
-                barcode = product['barcode']
-                product_url = product['productUrl']
-                product_ids = get_product_ids_by_barcode(token, barcode)
-
-                # Urun yorumlarını kontrol et
-                trendyol_urun = Urun()
-                urun_yorumlari = trendyol_urun.yorumlar(product_url)
-                table_name = 'products_with_comments' if urun_yorumlari else 'products_without_comments'
-
-                # product_ids'in boş olmadığını kontrol et
-                if product_ids:
-                    product_info = {
-                        'barcode': barcode,
-                        'product_url': product_url,
-                        'product_ids': ','.join(product_ids) if product_ids else None
-                    }
-                    with sqlite3.connect('database.db') as con:
-                        cur = con.cursor()
-                        cur.execute(f"SELECT * FROM {table_name} WHERE barcode = ?", (barcode,))
-                        existing_product = cur.fetchone()
-
-                        if existing_product:
-                            if (existing_product[2] != product_info['product_url'] or
-                                    existing_product[3] != product_info['product_ids']):
-                                cur.execute(
-                                    f"UPDATE {table_name} SET product_url = ?, product_ids = ? WHERE barcode = ?",
-                                    (product_info['product_url'], product_info['product_ids'], barcode))
-                                con.commit()
-                        else:
-                            cur.execute(
-                                f"INSERT INTO {table_name} (barcode, product_url, product_ids) VALUES (?, ?, ?)",
-                                (product_info['barcode'], product_info['product_url'], product_info['product_ids']))
-                            con.commit()
+            process_products(token, data)  # Modüler hale getirildi
 
             page_num += 1
 
     with sqlite3.connect('database.db') as con:
         cur = con.cursor()
-        if query:
-            cur.execute("SELECT * FROM products_with_comments WHERE barcode LIKE ? LIMIT ? OFFSET ?",
-                        ('%' + query + '%', per_page, offset))
-        else:
-            cur.execute("SELECT * FROM products_with_comments LIMIT ? OFFSET ?", (per_page, offset))
-        products_with_comments = cur.fetchall()
-
-        if query:
-            cur.execute("SELECT * FROM products_without_comments WHERE barcode LIKE ? LIMIT ? OFFSET ?",
-                        ('%' + query + '%', per_page, offset))
-        else:
-            cur.execute("SELECT * FROM products_without_comments LIMIT ? OFFSET ?", (per_page, offset))
-        products_without_comments = cur.fetchall()
-
-        if query:
-            cur.execute("SELECT COUNT(*) FROM products_with_comments WHERE barcode LIKE ?", ('%' + query + '%',))
-        else:
-            cur.execute("SELECT COUNT(*) FROM products_with_comments")
-        total_products_with_comments = cur.fetchone()[0]
-
-        if query:
-            cur.execute("SELECT COUNT(*) FROM products_without_comments WHERE barcode LIKE ?", ('%' + query + '%',))
-        else:
-            cur.execute("SELECT COUNT(*) FROM products_without_comments")
-        total_products_without_comments = cur.fetchone()[0]
+        products_with_comments, total_products_with_comments = fetch_products_from_db(cur, 'products_with_comments',
+                                                                                      query, per_page, offset)
+        products_without_comments, total_products_without_comments = fetch_products_from_db(cur,
+                                                                                            'products_without_comments',
+                                                                                            query, per_page, offset)
 
     total_products_with_comments_pages = (total_products_with_comments + per_page - 1) // per_page
     total_products_without_comments_pages = (total_products_without_comments + per_page - 1) // per_page
@@ -186,23 +135,109 @@ def stop_fetching():
     return redirect(url_for('products'))
 
 
-def fetch_products_page(token, page, size=200, approved='True', on_sale='true'):
-    if session.get('stop_fetching'):
-        return {'error': 'Fetching stopped by user.'}
-
+def fetch_products_page(token, page, size=50, approved='True', on_sale='true', retries=3):
     params = {
         'page': page,
         'size': size,
         'approved': approved,
         'onSale': on_sale
     }
-    response = requests.get(base_url, headers=headers, params=params)
-    if response.status_code != 200:
-        return {'error': f"Error: {response.status_code}, {response.text}"}
 
-    data = response.json()
-    products = data.get('content', [])
-    return {'data': products}
+    for attempt in range(retries):
+        try:
+            response = requests.get(base_url, headers=headers, params=params)
+            response.raise_for_status()  # Bu satır, 4XX ve 5XX hataları için istisna oluşturur.
+            data = response.json()
+            products = data.get('content', [])
+            return {'data': products}
+        except requests.exceptions.RequestException as e:
+            print(f"Attempt {attempt + 1} failed for page {page}: {e}")
+            if attempt < retries - 1:
+                time.sleep(2 ** attempt)  # Geri çekilme (exponential backoff) ile bekleme
+            else:
+                return {'error': f"Error: {response.status_code}, {response.text}"}
+    return {'error': f"Failed to fetch page {page} after {retries} attempts"}
+
+
+def fetch_all_products(token):
+    page_num = 1
+    total_pages = None
+
+    while True:
+        response = fetch_products_page(token, page_num)
+        if response.get('error'):
+            print(response['error'])
+            break  # Hata durumunda döngüden çık
+        data = response['data']
+        if not data:
+            print(f"No more products to fetch on page {page_num}. Restarting from page 1.")
+            page_num = 1
+            continue  # Sayfa numarasını sıfırla ve baştan başla
+
+        # Verileri işle
+        process_products(data)
+
+        # Sayfa numarasını artır
+        page_num += 1
+
+
+def process_products(token, products):
+    with sqlite3.connect('database.db') as con:
+        cur = con.cursor()
+
+        for product in products:
+            barcode = product['barcode']
+            product_url = product['productUrl']
+            product_ids = get_product_ids_by_barcode(token, barcode)
+
+            # Urun yorumlarını kontrol et
+            trendyol_urun = Urun()
+            urun_yorumlari = trendyol_urun.yorumlar(product_url)
+            table_name = 'products_with_comments' if urun_yorumlari else 'products_without_comments'
+
+            # product_ids'in boş olmadığını kontrol et
+            if product_ids:
+                product_info = {
+                    'barcode': barcode,
+                    'product_url': product_url,
+                    'product_ids': ','.join(product_ids) if product_ids else None
+                }
+
+                # Veritabanında ürün zaten var mı diye kontrol et
+                cur.execute(f"SELECT * FROM {table_name} WHERE barcode = ?", (barcode,))
+                existing_product = cur.fetchone()
+
+                if existing_product:
+                    # Eğer ürün varsa ve bilgileri değişmişse güncelle
+                    if (existing_product[2] != product_info['product_url'] or
+                            existing_product[3] != product_info['product_ids']):
+                        cur.execute(
+                            f"UPDATE {table_name} SET product_url = ?, product_ids = ? WHERE barcode = ?",
+                            (product_info['product_url'], product_info['product_ids'], barcode))
+                        con.commit()
+                else:
+                    # Eğer ürün yoksa yeni kayıt olarak ekle
+                    cur.execute(
+                        f"INSERT INTO {table_name} (barcode, product_url, product_ids) VALUES (?, ?, ?)",
+                        (product_info['barcode'], product_info['product_url'], product_info['product_ids']))
+                    con.commit()
+
+
+def fetch_products_from_db(cur, table_name, query, per_page, offset):
+    if query:
+        cur.execute(f"SELECT * FROM {table_name} WHERE barcode LIKE ? LIMIT ? OFFSET ?",
+                    ('%' + query + '%', per_page, offset))
+    else:
+        cur.execute(f"SELECT * FROM {table_name} LIMIT ? OFFSET ?", (per_page, offset))
+    products = cur.fetchall()
+
+    if query:
+        cur.execute(f"SELECT COUNT(*) FROM {table_name} WHERE barcode LIKE ?", ('%' + query + '%',))
+    else:
+        cur.execute(f"SELECT COUNT(*) FROM {table_name}")
+    total_products = cur.fetchone()[0]
+
+    return products, total_products
 
 
 @app.route('/products/<barcode>')
@@ -226,7 +261,6 @@ def product_detail(barcode):
         return {"error": "Product not found"}, 404
 
 
-
 @app.route('/product_details', methods=['GET', 'POST'])
 def product_details():
     barcode = request.args.get('barcode')
@@ -236,7 +270,7 @@ def product_details():
 
     if request.method == 'GET':
         trendyol_urun = Urun()
-        urun_yorumlari = trendyol_urun.yorumlar(product_url, hedef_satici="")
+        urun_yorumlari = trendyol_urun.yorumlar(product_url)
         if not urun_yorumlari:
             urun_yorumlari = []
 
@@ -332,7 +366,7 @@ class Urun:
         """Trendyol'dan hedef ürün detaylarını çevirir"""
         self.__kimlik = {"User-Agent": "pyTrendyol"}
 
-    def yorumlar(self, urun_link: str, hedef_satici: str = "DGN") -> list[dict] or None:
+    def yorumlar(self, urun_link: str, hedef_satici=None) -> list[dict] or None:
         """Trendyol'dan hedef ürün yorumlarını çevirir, sadece yıldız ve yorumları içerir"""
         if not urun_link:
             print("Ürün linki boş veya geçersiz.")
@@ -347,24 +381,24 @@ class Urun:
         url = f"https://public-mdc.trendyol.com/discovery-web-socialgw-service/api/review/{link.split('-')[-1]}"
         try:
             istek = get(url, headers=self.__kimlik)
-            veriler = istek.json()["result"]["productReviews"]
+            veriler = istek.json().get("result", {}).get("productReviews", None)
         except (ConnectionError, KeyError, json.JSONDecodeError) as e:
             print(f"Yorumları alırken bir hata oluştu: {e}")
             return None
 
+        if not veriler:
+            print("Veriler alınamadı veya boş döndü.")
+            return None
+
         sayfa = 1
-        while veriler.get("content"):
-            yorumlar.extend(
-                {
-                    "urun_id": link.split('-')[-1],
-                    "yildiz": yorum["rate"],
-                    "yorum": yorum["comment"]
-                }
-                for yorum in veriler["content"]
-                if yorum and
-                   (yorum["sellerName"] == hedef_satici if hedef_satici else True) and
-                   yorum["rate"] >= 3
-            )
+        while veriler and veriler.get("content"):
+            for yorum in veriler["content"]:
+                if yorum["rate"] >= 3:  # Yorumun en az 3 yıldızlı olup olmadığını kontrol edin
+                    yorumlar.append({
+                        "urun_id": link.split('-')[-1],
+                        "yildiz": yorum["rate"],
+                        "yorum": yorum["comment"]
+                    })
 
             sayfa += 1
             if sayfa >= veriler["totalPages"]:
@@ -372,7 +406,7 @@ class Urun:
 
             try:
                 istek = get(f"{url}?page={sayfa}", headers=self.__kimlik)
-                veriler = istek.json()["result"]["productReviews"]
+                veriler = istek.json().get("result", {}).get("productReviews", None)
             except (ConnectionError, KeyError, json.JSONDecodeError) as e:
                 print(f"Yorumları alırken bir hata oluştu: {e}")
                 break
@@ -407,20 +441,56 @@ class Urun:
             return None
 
 
-def fetch_products_page(token, page, size=50, approved='True', on_sale='true'):
+    def _link_ayristir(self, urun_link: str) -> str or None:
+        """Trendyol'un çeşitli formatlardaki ürün linklerini temizler"""
+        if not urun_link:
+            return None
+
+        if urun_link.startswith("https://m."):
+            url = urun_link.replace("https://m.", "https://")
+        elif urun_link.startswith("https://ty.gl"):
+            try:
+                kisa_link_header = get(urun_link, headers=self.__kimlik, allow_redirects=False).headers.get("location")
+                if kisa_link_header:
+                    url = self.__ayristir("adjust_redirect=", "&adjust_t=", unquote(kisa_link_header))
+                else:
+                    url = None
+            except KeyError:
+                url = None
+        else:
+            url = urun_link if search(r"http(?:s?):\/\/(?:www\.)?(m?.)?t?", urun_link) else None
+
+        return url.split("?")[0].replace("www.", "") if url else None
+
+    def __ayristir(self, baslangic: str, bitis: str, metin: str) -> str:
+        try:
+            return metin.split(baslangic)[1].split(bitis)[0]
+        except IndexError:
+            return None
+
+
+def fetch_products_page(token, page, size=50, approved='True', on_sale='true', retries=3):
     params = {
         'page': page,
         'size': size,
         'approved': approved,
         'onSale': on_sale
     }
-    response = requests.get(base_url, headers=headers, params=params)
-    if response.status_code != 200:
-        return {'error': f"Error: {response.status_code}, {response.text}"}
 
-    data = response.json()
-    products = data.get('content', [])
-    return {'data': products}
+    for attempt in range(retries):
+        try:
+            response = requests.get(base_url, headers=headers, params=params)
+            response.raise_for_status()  # Bu satır, 4XX ve 5XX hataları için istisna oluşturur.
+            data = response.json()
+            products = data.get('content', [])
+            return {'data': products}
+        except requests.exceptions.RequestException as e:
+            print(f"Attempt {attempt + 1} failed for page {page}: {e}")
+            if attempt < retries - 1:
+                time.sleep(2 ** attempt)  # Geri çekilme (exponential backoff) ile bekleme
+            else:
+                return {'error': f"Error: {response.status_code}, {response.text}"}
+    return {'error': f"Failed to fetch page {page} after {retries} attempts"}
 
 
 def login(username, password):
@@ -511,6 +581,34 @@ def get_product_ids_by_barcode(token, barcode_code):
         print(f"Response Text: {barcode_response.text}")  # Hata mesajı yazdır
         return None
 
+
+def scheduled_task():
+    print("Scheduled task running...")
+    token = "your_token"  # Otomasyon için uygun bir token alın
+    fetch_all_products(token)
+    print("Scheduled task completed.")
+
+
+if __name__ == '__main__':
+    init_db()
+
+    # Flask uygulamasını çalıştır
+    app.run(debug=True, use_reloader=False)  # use_reloader=False ile yeniden başlatmayı önler
+
+    # Zamanlayıcıyı başlat
+    scheduler = BackgroundScheduler()
+    scheduler.start()
+
+    # Her saat başında scheduled_task fonksiyonunu çalıştır
+    scheduler.add_job(
+        func=scheduled_task,
+        trigger=IntervalTrigger(hours=1),
+        id='fetch_products_job',
+        name='Fetch products every hour',
+        replace_existing=True)
+
+    # Uygulama sonlandığında zamanlayıcıyı durdur
+    atexit.register(lambda: scheduler.shutdown())
 
 if __name__ == '__main__':
     init_db()
